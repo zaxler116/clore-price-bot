@@ -1,4 +1,4 @@
-# Clore.ai Auto-Pricing Bot
+'# Clore.ai Auto-Pricing Bot
 
 ---
 
@@ -40,7 +40,7 @@ Use **systemd** to run the bot as a persistent background service.
 
 ### Installation
 
-~~bash
+```bash
 sudo mkdir -p /opt/clore-bot
 sudo cp bot.py /opt/clore-bot/
 cd /opt/clore-bot
@@ -48,11 +48,11 @@ python3 -m venv venv
 source venv/bin/activate
 pip install requests schedule
 deactivate
-~~
+```
 
 Create systemd service file `/etc/systemd/system/clore-price-bot.service`:
 
-~~ini
+```ini
 [Unit]
 Description=Clore.ai Price Bot
 After=network.target
@@ -73,37 +73,37 @@ Environment="CLORE_API_URL=https://api.clore.ai/v1"
 
 [Install]
 WantedBy=multi-user.target
-~~
+```
 
 Enable and start the service:
 
-~~bash
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable clore-price-bot
 sudo systemctl start clore-price-bot
-~~
+```
 
 Check logs:
 
-~~bash
+```bash
 sudo journalctl -u clore-price-bot -f
-~~
+```
 
 ### Updating the Bot
 
-~~bash
+```bash
 sudo systemctl restart clore-price-bot
-~~
+```
 
 ### Uninstalling
 
-~~bash
+```bash
 sudo systemctl stop clore-price-bot
 sudo systemctl disable clore-price-bot
 sudo rm /etc/systemd/system/clore-price-bot.service
 sudo systemctl daemon-reload
 sudo rm -rf /opt/clore-bot
-~~
+```
 
 ### License
 
@@ -149,7 +149,7 @@ Clore.ai автоматически завершает любые сторонн
 
 ### Установка
 
-~~bash
+```bash
 sudo mkdir -p /opt/clore-bot
 sudo cp bot.py /opt/clore-bot/
 cd /opt/clore-bot
@@ -157,11 +157,11 @@ python3 -m venv venv
 source venv/bin/activate
 pip install requests schedule
 deactivate
-~~
+```
 
 Создайте файл systemd-службы `/etc/systemd/system/clore-price-bot.service`:
 
-~~ini
+```ini
 [Unit]
 Description=Clore.ai Price Bot
 After=network.target
@@ -182,37 +182,37 @@ Environment="CLORE_API_URL=https://api.clore.ai/v1"
 
 [Install]
 WantedBy=multi-user.target
-~~
+```
 
 Включите и запустите службу:
 
-~~bash
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable clore-price-bot
 sudo systemctl start clore-price-bot
-~~
+```
 
 Проверьте логи:
 
-~~bash
+```bash
 sudo journalctl -u clore-price-bot -f
-~~
+```
 
 ### Обновление бота
 
-~~bash
+```bash
 sudo systemctl restart clore-price-bot
-~~
+```
 
 ### Удаление
 
-~~bash
+```bash
 sudo systemctl stop clore-price-bot
 sudo systemctl disable clore-price-bot
 sudo rm /etc/systemd/system/clore-price-bot.service
 sudo systemctl daemon-reload
 sudo rm -rf /opt/clore-bot
-~~
+```
 
 ### Лицензия
 
@@ -222,19 +222,19 @@ MIT
 
 ## 📄 Files
 
-~~text
+```text
 clore-price-bot/
 ├── bot.py
 ├── requirements.txt
 └── README.md
-~~
+```
 
 ## requirements.txt
 
-~~text
+```text
 requests
 schedule
-~~
+```
 
 ## 📞 Support / Поддержка
 
