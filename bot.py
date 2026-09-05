@@ -134,7 +134,7 @@ def update_price():
             return
         logger.info(f"Курсы: BTC={rate_btc:.2f} USD, CLORE={rate_clore:.8f} USD")
 
-        # Вычисляем цены в криптовалютах для явной передачи (на случай, если autoprice не сработает)
+        # Вычисляем цены в криптовалютах
         btc_price_day = base_price_day / rate_btc
         clore_price_day_crypto = clore_price_day_usd / rate_clore
         logger.info(f"Цена в BTC/день: {btc_price_day:.8f}")
@@ -154,41 +154,39 @@ def update_price():
         logger.info(f"Текущая конфигурация: name={current_config.get('name')}, id={current_config.get('id')}")
 
         # 5. Формируем payload с autoprice для всех валют
-        # Включаем автопрайс для всех трёх валют, чтобы цены задавались через usd_pricing
         autoprice = {
             "bitcoin": "usd",
             "CLORE-Blockchain": "usd",
             "USD-Blockchain": "usd"
         }
 
-        # Заполняем usd_pricing для всех валют
-        # Для spot ставим небольшую положительную цену (0.01 USD/день), чтобы избежать ошибок
+        # Spot цена = On‑Demand цена (чтобы спот не был дешевле)
         usd_pricing = {
             "bitcoin": {
                 "on_demand": base_price_day,
-                "spot": 0.01  # не используем spot, но API требует положительное число
+                "spot": base_price_day   # спот равен on_demand
             },
             "CLORE-Blockchain": {
                 "on_demand": clore_price_day_usd,
-                "spot": 0.01
+                "spot": clore_price_day_usd
             },
             "USD-Blockchain": {
                 "on_demand": base_price_day,
-                "spot": 0.01
+                "spot": base_price_day
             }
         }
 
-        # Явные цены в криптовалютах (они будут проигнорированы, так как autoprice включён)
+        # Явные цены в криптовалютах (они игнорируются при autoprice, но для совместимости)
         payload = {
             "name": SERVER_NAME,
             "availability": True,
             "mrl": 72,
             "bitcoin_on_demand": btc_price_day,
-            "bitcoin_spot": 0.01,  # тоже положительное
+            "bitcoin_spot": btc_price_day,   # спот = on_demand
             "CLORE-Blockchain_on_demand": clore_price_day_crypto,
-            "CLORE-Blockchain_spot": 0.01,
+            "CLORE-Blockchain_spot": clore_price_day_crypto,
             "USD-Blockchain_on_demand": base_price_day,
-            "USD-Blockchain_spot": 0.01,
+            "USD-Blockchain_spot": base_price_day,
             "enabled-USD-Blockchain": True,
             "enabled-CLORE-Blockchain": True,
             "enabled-bitcoin": True,
