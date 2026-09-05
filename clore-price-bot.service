@@ -5,15 +5,15 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/var/www/clore
-ExecStart=/var/www/clore/venv/bin/python /var/www/clore/bot.py
+WorkingDirectory=/opt/clore-bot
+ExecStart=/opt/clore-bot/venv/bin/python /opt/clore-bot/bot.py
 Restart=always
 RestartSec=10
-Environment="CLORE_API_KEY=key"
-Environment="CLORE_SERVER_ID=id"
-Environment="CLORE_SERVER_NAME=name"
+Environment="CLORE_API_KEY=your_api_key_here"
+Environment="CLORE_SERVER_ID=your_server_id_here"
+Environment="CLORE_SERVER_NAME=your_server_name_here"
 Environment="CLORE_GPU_MODEL=RTX 5080"
-Environment="CLORE_UPDATE_INTERVAL=5"
+Environment="CLORE_UPDATE_INTERVAL=30"
 Environment="CLORE_API_URL=https://api.clore.ai/v1"
 
 [Install]
