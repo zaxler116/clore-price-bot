@@ -1,4 +1,4 @@
-'# Clore.ai Auto-Pricing Bot
+# Clore.ai Auto-Pricing Bot
 
 ---
 
