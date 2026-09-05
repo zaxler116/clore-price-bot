@@ -1,181 +1,220 @@
 import os
 import time
 import logging
-import requests
+import re
 import schedule
+import requests
 from statistics import median
-from typing import List, Dict, Optional
+from typing import List, Optional
+from clore_ai import CloreAI
 
-# -------------------- Чтение переменных окружения --------------------
+# -------------------- Настройки --------------------
 API_KEY = os.getenv("CLORE_API_KEY")
 if not API_KEY:
     raise ValueError("CLORE_API_KEY не задан")
 
-SERVER_ID = int(os.getenv("CLORE_SERVER_ID"))          # ID вашего сервера (число)
-SERVER_NAME = os.getenv("CLORE_SERVER_NAME")           # Имя сервера (как в интерфейсе)
+SERVER_ID = int(os.getenv("CLORE_SERVER_ID"))
+SERVER_NAME = os.getenv("CLORE_SERVER_NAME")
 if not SERVER_NAME:
     raise ValueError("CLORE_SERVER_NAME не задан")
 
 GPU_MODEL = os.getenv("CLORE_GPU_MODEL", "RTX 5080")
-UPDATE_INTERVAL_MINUTES = int(os.getenv("CLORE_UPDATE_INTERVAL", "10"))
-BASE_URL = os.getenv("CLORE_API_URL", "https://api.clore.ai/v1")
+UPDATE_INTERVAL_MINUTES = int(os.getenv("CLORE_UPDATE_INTERVAL", "2"))
+BASE_URL = "https://api.clore.ai/v1"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-HEADERS = {"auth": API_KEY}
+client = CloreAI(api_key=API_KEY, max_retries=5)
 
-# -------------------- Функции API --------------------
 
-def get_marketplace() -> Optional[List[Dict]]:
-    """Получить список всех серверов с marketplace."""
-    try:
-        resp = requests.get(f"{BASE_URL}/marketplace", headers=HEADERS, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("servers", [])
-    except Exception as e:
-        logger.error(f"Ошибка получения marketplace: {e}")
-        return None
+def extract_gpu_count(gpu_str: str) -> int:
+    """Извлекает количество GPU из строки типа '1x NVIDIA...'."""
+    if not gpu_str:
+        return 1
+    match = re.match(r'(\d+)x', gpu_str.strip())
+    return int(match.group(1)) if match else 1
 
-def get_spot_marketplace(server_id: int) -> Optional[Dict]:
-    """Получить информацию о спотовом рынке для сервера (включая курсы)."""
-    try:
-        resp = requests.get(f"{BASE_URL}/spot_marketplace?market={server_id}", headers=HEADERS, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("market")
-    except Exception as e:
-        logger.error(f"Ошибка получения spot_marketplace: {e}")
-        return None
 
-def set_server_settings(
-    server_name: str,
-    btc_on_demand: float,
-    btc_spot: float,
-    clore_on_demand: float,
-    clore_spot: float,
-    usd_on_demand: float,
-    usd_spot: float,
-    enabled_btc: bool = True,
-    enabled_clore: bool = True,
-    enabled_usd: bool = True,
-    mrl: int = 72
-) -> bool:
-    """Установить настройки сервера через /v1/set_server_settings."""
-    payload = {
-        "name": server_name,
-        "availability": True,
-        "mrl": mrl,
-        "bitcoin_on_demand": btc_on_demand,
-        "bitcoin_spot": btc_spot,
-        "CLORE-Blockchain_on_demand": clore_on_demand,
-        "CLORE-Blockchain_spot": clore_spot,
-        "USD-Blockchain_on_demand": usd_on_demand,
-        "USD-Blockchain_spot": usd_spot,
-        "enabled-USD-Blockchain": enabled_usd,
-        "enabled-CLORE-Blockchain": enabled_clore,
-        "enabled-bitcoin": enabled_btc,
-    }
-    try:
-        resp = requests.post(f"{BASE_URL}/set_server_settings", headers=HEADERS, json=payload, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("code") == 0:
-            logger.info("Настройки сервера успешно обновлены.")
-            return True
-        else:
-            logger.error(f"Ошибка при обновлении настроек: {data}")
-            return False
-    except Exception as e:
-        logger.error(f"Ошибка запроса set_server_settings: {e}")
-        return False
-
-# -------------------- Основная логика --------------------
-
-def compute_median_price_usd(servers: List[Dict]) -> Optional[float]:
-    """Вычислить медианную цену (USD за день) среди арендованных серверов с нужной GPU."""
+def compute_median_price_per_gpu(servers: List) -> Optional[float]:
+    """Вычисляет медианную цену за 1 GPU в день (USD) среди арендованных серверов."""
     prices = []
     for s in servers:
-        if not s.get("rented", False):
+        if not s.rented:
             continue
-        specs = s.get("specs", {})
-        gpu_str = specs.get("gpu", "")
+        gpu_str = s.specs.gpu if s.specs else ""
         if GPU_MODEL not in gpu_str:
             continue
-        price_obj = s.get("price", {})
-        on_demand = price_obj.get("on_demand", {})
-        usd_price = on_demand.get("USD-Blockchain")
-        if usd_price is not None and usd_price > 0:
-            prices.append(usd_price)
+        gpu_count = extract_gpu_count(gpu_str)
+
+        price_total = None
+        if s.price and s.price.on_demand:
+            price_total = getattr(s.price.on_demand, 'USD_Blockchain', None)
+        if price_total is None and s.price_usd is not None:
+            price_total = s.price_usd * 24
+
+        if price_total is not None and price_total > 0:
+            prices.append(price_total / gpu_count)
+
     if not prices:
-        logger.warning("Нет арендованных серверов с такой GPU и ценой в USD.")
+        logger.warning("Нет арендованных серверов с такой GPU.")
         return None
+
     med = median(prices)
-    logger.info(f"Медианная дневная цена (Rented, {GPU_MODEL}) в USD: ${med:.3f}/день")
+    logger.info(f"Медианная цена за 1 GPU/день (Rented, {GPU_MODEL}) = ${med:.3f}")
     return med
 
+
+def get_my_servers() -> dict:
+    """Получить список своих серверов через REST /my_servers."""
+    url = f"{BASE_URL}/my_servers"
+    headers = {"auth": API_KEY}
+    resp = requests.get(url, headers=headers, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def post_with_retry(url: str, headers: dict, json_data: dict, max_retries: int = 5) -> dict:
+    """POST с повторными попытками при 429."""
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, headers=headers, json=json_data, timeout=10)
+            if resp.status_code == 429:
+                wait = 2 ** attempt
+                logger.warning(f"429, повтор через {wait} сек (попытка {attempt+1}/{max_retries})")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"Ошибка {e}, повтор через 2 сек")
+            time.sleep(2)
+    return {}
+
+
 def update_price():
-    logger.info("Запуск обновления цены...")
-    servers = get_marketplace()
-    if servers is None:
-        return
+    logger.info("=== ЗАПУСК ОБНОВЛЕНИЯ ЦЕНЫ ===")
 
-    med_usd_day = compute_median_price_usd(servers)
-    if med_usd_day is None:
-        return
+    try:
+        # 1. Получить все серверы с marketplace (через SDK)
+        servers = client.marketplace(available_only=False)
+        if not servers:
+            logger.error("Список серверов пуст.")
+            return
+        logger.info(f"Получено {len(servers)} серверов")
+        time.sleep(1)
 
-    # Базовая цена за день: медиана минус $0.24 (т.е. $0.01/час)
-    base_price_day = med_usd_day - 0.24
-    if base_price_day < 0.01:
-        base_price_day = 0.01
+        # 2. Медиана per GPU
+        med_usd_day = compute_median_price_per_gpu(servers)
+        if med_usd_day is None:
+            return
 
-    # Цена для CLORE на 15% выше
-    clore_price_day_usd = base_price_day * 1.15
+        base_price_day = max(med_usd_day - 0.24, 0.01)
+        clore_price_day_usd = base_price_day * 1.15
+        logger.info(f"Базовая цена (USD/день за 1 GPU): ${base_price_day:.3f}")
+        logger.info(f"Цена для CLORE (USD/день за 1 GPU): ${clore_price_day_usd:.3f}")
 
-    # Получить курсы валют
-    market = get_spot_marketplace(SERVER_ID)
-    if market is None:
-        logger.error("Не удалось получить курсы валют.")
-        return
-    rates = market.get("currency_rates_in_usd", {})
-    rate_btc = rates.get("bitcoin")
-    rate_clore = rates.get("CLORE-Blockchain")
-    if rate_btc is None or rate_clore is None:
-        logger.error("Не удалось получить курс BTC или CLORE.")
-        return
+        # 3. Получить курсы валют (через SDK)
+        spot = client.spot_marketplace(SERVER_ID)
+        if not spot:
+            logger.error("Не удалось получить spot_marketplace")
+            return
+        time.sleep(1)
 
-    # Пересчёт в криптовалюты (за день)
-    btc_price_day = base_price_day / rate_btc
-    clore_price_day_crypto = clore_price_day_usd / rate_clore
+        rates = spot.currency_rates_in_usd
+        if not rates:
+            logger.error("Нет курсов валют")
+            return
+        rate_btc = rates.get("bitcoin")
+        rate_clore = rates.get("CLORE-Blockchain")
+        if rate_btc is None or rate_clore is None:
+            logger.error(f"Курсы не получены: BTC={rate_btc}, CLORE={rate_clore}")
+            return
+        logger.info(f"Курсы: BTC={rate_btc:.2f} USD, CLORE={rate_clore:.8f} USD")
 
-    # Установить настройки
-    success = set_server_settings(
-        server_name=SERVER_NAME,
-        btc_on_demand=btc_price_day,
-        btc_spot=btc_price_day * 0.9,      # спот чуть ниже
-        clore_on_demand=clore_price_day_crypto,
-        clore_spot=clore_price_day_crypto * 0.9,
-        usd_on_demand=base_price_day,
-        usd_spot=base_price_day * 0.9,
-        enabled_btc=True,
-        enabled_clore=True,
-        enabled_usd=True,
-        mrl=72
-    )
+        # Вычисляем цены в криптовалютах для явной передачи (на случай, если autoprice не сработает)
+        btc_price_day = base_price_day / rate_btc
+        clore_price_day_crypto = clore_price_day_usd / rate_clore
+        logger.info(f"Цена в BTC/день: {btc_price_day:.8f}")
+        logger.info(f"Цена в CLORE/день: {clore_price_day_crypto:.2f}")
 
-    if success:
-        logger.info(
-            f"Цены обновлены (за день): BTC={btc_price_day:.8f}, "
-            f"CLORE={clore_price_day_crypto:.2f}, USD={base_price_day:.3f}"
-        )
-    else:
-        logger.error("Не удалось обновить цены.")
+        # 4. Получить текущую конфигурацию через /my_servers (для отладки)
+        my_servers_data = get_my_servers()
+        servers_list = my_servers_data.get("servers", [])
+        current_config = None
+        for s in servers_list:
+            if s.get("name") == SERVER_NAME:
+                current_config = s
+                break
+        if not current_config:
+            logger.error(f"Сервер {SERVER_NAME} не найден в my_servers")
+            return
+        logger.info(f"Текущая конфигурация: name={current_config.get('name')}, id={current_config.get('id')}")
 
-# -------------------- Запуск --------------------
+        # 5. Формируем payload с autoprice для всех валют
+        # Включаем автопрайс для всех трёх валют, чтобы цены задавались через usd_pricing
+        autoprice = {
+            "bitcoin": "usd",
+            "CLORE-Blockchain": "usd",
+            "USD-Blockchain": "usd"
+        }
+
+        # Заполняем usd_pricing для всех валют
+        # Для spot ставим небольшую положительную цену (0.01 USD/день), чтобы избежать ошибок
+        usd_pricing = {
+            "bitcoin": {
+                "on_demand": base_price_day,
+                "spot": 0.01  # не используем spot, но API требует положительное число
+            },
+            "CLORE-Blockchain": {
+                "on_demand": clore_price_day_usd,
+                "spot": 0.01
+            },
+            "USD-Blockchain": {
+                "on_demand": base_price_day,
+                "spot": 0.01
+            }
+        }
+
+        # Явные цены в криптовалютах (они будут проигнорированы, так как autoprice включён)
+        payload = {
+            "name": SERVER_NAME,
+            "availability": True,
+            "mrl": 72,
+            "bitcoin_on_demand": btc_price_day,
+            "bitcoin_spot": 0.01,  # тоже положительное
+            "CLORE-Blockchain_on_demand": clore_price_day_crypto,
+            "CLORE-Blockchain_spot": 0.01,
+            "USD-Blockchain_on_demand": base_price_day,
+            "USD-Blockchain_spot": 0.01,
+            "enabled-USD-Blockchain": True,
+            "enabled-CLORE-Blockchain": True,
+            "enabled-bitcoin": True,
+            "autoprice": autoprice,
+            "usd_pricing": usd_pricing
+        }
+
+        logger.info(f"Отправка payload: {payload}")
+
+        # 6. Отправить через POST с повторными попытками
+        url = f"{BASE_URL}/set_server_settings"
+        headers = {"auth": API_KEY, "Content-type": "application/json"}
+        result = post_with_retry(url, headers, payload)
+
+        logger.info(f"Ответ API: {result}")
+        if result.get("code") == 0:
+            logger.info("✅ ЦЕНА УСПЕШНО ОБНОВЛЕНА!")
+        else:
+            logger.error(f"❌ Ошибка обновления: {result}")
+
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
+
 
 if __name__ == "__main__":
-    logger.info(f"Бот запущен. Обновление каждые {UPDATE_INTERVAL_MINUTES} минут.")
+    logger.info(f"Бот запущен. Обновление каждые {UPDATE_INTERVAL_MINUTES} мин.")
     update_price()
     schedule.every(UPDATE_INTERVAL_MINUTES).minutes.do(update_price)
     while True:
