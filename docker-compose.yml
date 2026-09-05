@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  clore-bot:
+    build: .
+    container_name: clore-price-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Если хотите сохранять логи в файл на хосте (опционально):
+    volumes:
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
